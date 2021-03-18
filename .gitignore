@@ -1,0 +1,6 @@
+.ipynb_checkpoints/
+__pycache__/
+.vscode/
+.eggs/
+dask_windows.egg-info/
+dask_windows/_version.py
