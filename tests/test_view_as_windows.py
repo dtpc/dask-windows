@@ -1,6 +1,7 @@
 import pytest
 import dask.array
 import numpy as np
+from dask.array.overlap import sliding_window_view
 from skimage.util import view_as_windows as skimage_view_as_windows
 
 from dask_windows import view_as_windows as dask_view_as_windows
@@ -15,17 +16,32 @@ params = [
 ]
 
 
-def assert_windows_equal_to_skimage(arr, chunks, window_shape, step):
+def _dask_sliding_window_view(arr, window_shape, step):
+    """Wrap dask overlap version with step."""
+    if isinstance(window_shape, int):
+        window_shape = [window_shape] * arr.ndim
+
+    if isinstance(step, int):
+        step = [step] * arr.ndim
+
+    ix = tuple(slice(0, None, s) for s in step) + (...,)
+    w = sliding_window_view(arr, window_shape)[ix]
+    return w
+
+
+def assert_windows_equal(arr, chunks, window_shape, step):
     dask_arr = dask.array.from_array(arr, chunks=chunks)
     sk_win = skimage_view_as_windows(arr, window_shape, step)
-    dask_win = dask_view_as_windows(dask_arr, window_shape, step)
-    np.testing.assert_equal(sk_win, dask_win.compute())
+    dask_win = dask_view_as_windows(dask_arr, window_shape, step).compute()
+    dask_win2 = _dask_sliding_window_view(dask_arr, window_shape, step).compute()
+    np.testing.assert_equal(sk_win, dask_win)
+    np.testing.assert_equal(dask_win2, dask_win)
 
 
 @pytest.mark.parametrize("shape,chunks,window_shape,step", params)
 def test_view_as_windows(shape, chunks, window_shape, step):
     arr = np.random.randint(0, 99, size=shape, dtype=np.uint8)
-    assert_windows_equal_to_skimage(arr, chunks, window_shape, step)
+    assert_windows_equal(arr, chunks, window_shape, step)
 
 
 def _gen_chunks(ndims, nchunks):
@@ -42,10 +58,8 @@ def _gen_rand_chunk_shape(shape, nchunks):
     ndims = len(shape)
     cs = _gen_chunks(ndims, nchunks)
     np.random.shuffle(cs)
-    print(cs)
 
     def _rand_chunking(c, n):
-        print(c, n)
         if c == 1:
             return n
         elif c == n:
@@ -71,4 +85,4 @@ def test_view_as_windows_ndims(ndim):
     step = [np.random.randint(1, s + 1) for s in shape]
     arr = np.random.randint(0, 99, size=shape, dtype=np.uint8)
     window_shape = 3
-    assert_windows_equal_to_skimage(arr, chunks, window_shape, step)
+    assert_windows_equal(arr, chunks, window_shape, step)
